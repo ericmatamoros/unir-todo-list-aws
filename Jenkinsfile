@@ -38,6 +38,7 @@ pipeline {
                     sam validate --region $AWS_DEFAULT_REGION
                     sam deploy \
                         --config-env staging \
+                        --resolve-s3 \
                         --no-confirm-changeset \
                         --no-fail-on-empty-changeset
                 '''
