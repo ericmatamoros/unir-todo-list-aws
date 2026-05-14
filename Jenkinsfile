@@ -70,15 +70,21 @@ pipeline {
 
         stage('Promote') {
             steps {
-                sh '''
-                    git config user.email "jenkins@ci.local"
-                    git config user.name  "Jenkins CI"
-                    git fetch origin
-                    git checkout master
-                    git pull origin master
-                    git merge --no-ff origin/develop -m "Promote develop to master [CI]"
-                    git push origin master
-                '''
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-token',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        git config user.email "jenkins@ci.local"
+                        git config user.name  "Jenkins CI"
+                        git fetch origin
+                        git checkout master
+                        git pull origin master
+                        git merge --no-ff origin/develop -m "Promote develop to master [CI]"
+                        git push "https://${GIT_USER}:${GIT_TOKEN}@github.com/ericmatamoros/unir-todo-list-aws.git" master
+                    '''
+                }
             }
         }
     }
