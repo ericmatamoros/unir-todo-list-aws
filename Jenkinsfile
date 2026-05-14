@@ -66,5 +66,19 @@ pipeline {
                 junit 'result-rest.xml'
             }
         }
+
+        stage('Promote') {
+            steps {
+                sh '''
+                    git config user.email "jenkins@ci.local"
+                    git config user.name  "Jenkins CI"
+                    git fetch origin
+                    git checkout master
+                    git pull origin master
+                    git merge --no-ff origin/develop -m "Promote develop to master [CI]"
+                    git push origin master
+                '''
+            }
+        }
     }
 }
