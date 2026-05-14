@@ -91,7 +91,13 @@ pipeline {
                         git fetch origin
                         git checkout master
                         git pull origin master
-                        git merge --no-ff origin/develop -m "Promote develop to master [CI]"
+                        git merge --no-ff --no-commit origin/develop || true
+                        # Preserve master's Jenkinsfile if it has one (CD pipeline must not be overwritten by develop's CI)
+                        if git show HEAD:Jenkinsfile >/dev/null 2>&1; then
+                            git show HEAD:Jenkinsfile > Jenkinsfile
+                            git add Jenkinsfile
+                        fi
+                        git commit -m "Promote develop to master [CI]"
                         git push "https://${GIT_USER}:${GIT_TOKEN}@github.com/ericmatamoros/unir-todo-list-aws.git" master
                     '''
                 }
