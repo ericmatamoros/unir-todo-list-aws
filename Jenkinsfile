@@ -16,6 +16,16 @@ pipeline {
 
         stage('Static Test') {
             steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh '''
+                        export PYTHONPATH=$WORKSPACE
+                        export DYNAMODB_TABLE=test-TodosDynamoDbTable
+                        export ENDPOINT_OVERRIDE=""
+                        python3 -m pytest --junitxml=result-unit.xml test/unit
+                    '''
+                }
+                junit 'result-unit.xml'
+
                 catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
                     sh 'flake8 --format=pylint src > flake8.out || true'
                 }
