@@ -20,7 +20,7 @@ pipeline {
                     sh 'flake8 --format=pylint src > flake8.out || true'
                 }
                 catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                    sh 'bandit --exit-zero -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}"'
+                    sh 'bandit -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}" || true'
                 }
                 recordIssues(
                     tools: [
