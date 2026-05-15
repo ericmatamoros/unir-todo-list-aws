@@ -92,11 +92,13 @@ pipeline {
                         git checkout master
                         git pull origin master
                         git merge --no-ff --no-commit origin/develop || true
-                        # Preserve master's Jenkinsfile if it has one (CD pipeline must not be overwritten by develop's CI)
-                        if git show HEAD:Jenkinsfile >/dev/null 2>&1; then
-                            git show HEAD:Jenkinsfile > Jenkinsfile
-                            git add Jenkinsfile
-                        fi
+                        # Preserve master's CD pipeline files: they must not be overwritten by develop's CI versions
+                        for f in Jenkinsfile Jenkinsfile_agentes; do
+                            if git show HEAD:$f >/dev/null 2>&1; then
+                                git show HEAD:$f > $f
+                                git add $f
+                            fi
+                        done
                         git commit -m "Promote develop to master [CI]"
                         git push "https://${GIT_USER}:${GIT_TOKEN}@github.com/ericmatamoros/unir-todo-list-aws.git" master
                     '''

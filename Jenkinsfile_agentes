@@ -1,0 +1,184 @@
+pipeline {
+    agent none
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        STACK_NAME        = 'todo-list-aws-staging'
+    }
+
+    stages {
+        stage('Get Code') {
+            agent { label 'built-in' }
+            steps {
+                cleanWs()
+                sh '''
+                    echo "===== AGENTE: Get Code ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                git branch: 'develop',
+                    url: 'https://github.com/ericmatamoros/unir-todo-list-aws'
+                stash name: 'source-code', includes: '**/*', useDefaultExcludes: false
+            }
+        }
+
+        stage('Static Test') {
+            parallel {
+                stage('Unit') {
+                    agent { label 'tests' }
+                    steps {
+                        cleanWs()
+                        unstash 'source-code'
+                        sh '''
+                            echo "===== AGENTE: Unit ====="
+                            whoami
+                            hostname
+                            pwd
+                        '''
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                            sh '''
+                                export PYTHONPATH=$WORKSPACE
+                                export DYNAMODB_TABLE=test-TodosDynamoDbTable
+                                export ENDPOINT_OVERRIDE=""
+                                python3 -m pytest --junitxml=result-unit.xml test/unit
+                            '''
+                        }
+                        junit 'result-unit.xml'
+                    }
+                }
+
+                stage('Static') {
+                    agent { label 'calidad' }
+                    steps {
+                        cleanWs()
+                        unstash 'source-code'
+                        sh '''
+                            echo "===== AGENTE: Static (Flake8) ====="
+                            whoami
+                            hostname
+                            pwd
+                        '''
+                        catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                            sh 'flake8 --format=pylint src > flake8.out || true'
+                        }
+                        recordIssues(
+                            tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
+                        )
+                    }
+                }
+
+                stage('Security') {
+                    agent { label 'calidad' }
+                    steps {
+                        cleanWs()
+                        unstash 'source-code'
+                        sh '''
+                            echo "===== AGENTE: Security (Bandit) ====="
+                            whoami
+                            hostname
+                            pwd
+                        '''
+                        catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                            sh 'bandit -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}" || true'
+                        }
+                        recordIssues(
+                            tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')]
+                        )
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            agent { label 'built-in' }
+            steps {
+                cleanWs()
+                unstash 'source-code'
+                sh '''
+                    echo "===== AGENTE: Deploy ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                sh '''
+                    sam build
+                    sam validate --region $AWS_DEFAULT_REGION
+                    sam deploy \
+                        --config-env staging \
+                        --resolve-s3 \
+                        --no-confirm-changeset \
+                        --no-fail-on-empty-changeset
+                '''
+                script {
+                    env.BASE_URL = sh(
+                        script: """
+                            aws cloudformation describe-stacks \
+                                --stack-name ${STACK_NAME} \
+                                --region ${AWS_DEFAULT_REGION} \
+                                --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
+                                --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    echo "BASE_URL = ${env.BASE_URL}"
+                }
+            }
+        }
+
+        stage('Rest Test') {
+            agent { label 'tests' }
+            steps {
+                cleanWs()
+                unstash 'source-code'
+                sh '''
+                    echo "===== AGENTE: Rest Test ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                sh '''
+                    export PYTHONPATH=$WORKSPACE
+                    python3 -m pytest --junitxml=result-rest.xml test/integration/todoApiTest.py
+                '''
+                junit 'result-rest.xml'
+            }
+        }
+
+        stage('Promote') {
+            agent { label 'built-in' }
+            steps {
+                cleanWs()
+                sh '''
+                    echo "===== AGENTE: Promote ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-token',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        git clone https://github.com/ericmatamoros/unir-todo-list-aws.git repo
+                        cd repo
+                        git config user.email "jenkins@ci.local"
+                        git config user.name  "Jenkins CI"
+                        git checkout master
+                        git merge --no-ff --no-commit origin/develop || true
+                        # Preserve master's CD pipeline files: they must not be overwritten by develop's CI versions
+                        for f in Jenkinsfile Jenkinsfile_agentes; do
+                            if git show HEAD:$f >/dev/null 2>&1; then
+                                git show HEAD:$f > $f
+                                git add $f
+                            fi
+                        done
+                        git commit -m "Promote develop to master [CI]"
+                        git push "https://${GIT_USER}:${GIT_TOKEN}@github.com/ericmatamoros/unir-todo-list-aws.git" master
+                    '''
+                }
+            }
+        }
+    }
+}
