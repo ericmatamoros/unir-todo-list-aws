@@ -1,0 +1,83 @@
+pipeline {
+    agent none
+
+    environment {
+        AWS_DEFAULT_REGION = 'us-east-1'
+        STACK_NAME        = 'todo-list-aws-production'
+    }
+
+    stages {
+        stage('Get Code') {
+            agent { label 'built-in' }
+            steps {
+                cleanWs()
+                sh '''
+                    echo "===== AGENTE: Get Code ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                git branch: 'master',
+                    url: 'https://github.com/ericmatamoros/unir-todo-list-aws'
+                stash name: 'source-code', includes: '**/*', useDefaultExcludes: false
+            }
+        }
+
+        stage('Deploy') {
+            agent { label 'built-in' }
+            steps {
+                cleanWs()
+                unstash 'source-code'
+                sh '''
+                    echo "===== AGENTE: Deploy ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                sh '''
+                    sam build
+                    sam validate --region $AWS_DEFAULT_REGION
+                    sam deploy \
+                        --config-env production \
+                        --resolve-s3 \
+                        --no-confirm-changeset \
+                        --no-fail-on-empty-changeset
+                '''
+                script {
+                    env.BASE_URL = sh(
+                        script: """
+                            aws cloudformation describe-stacks \
+                                --stack-name ${STACK_NAME} \
+                                --region ${AWS_DEFAULT_REGION} \
+                                --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
+                                --output text
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    echo "BASE_URL = ${env.BASE_URL}"
+                }
+            }
+        }
+
+        stage('Rest Test') {
+            agent { label 'tests' }
+            steps {
+                cleanWs()
+                unstash 'source-code'
+                sh '''
+                    echo "===== AGENTE: Rest Test ====="
+                    whoami
+                    hostname
+                    pwd
+                '''
+                sh '''
+                    export PYTHONPATH=$WORKSPACE
+                    python3 -m pytest --junitxml=result-rest.xml \
+                        test/integration/todoApiTest.py \
+                        -k "test_api_listtodos or test_api_gettodo"
+                '''
+                junit 'result-rest.xml'
+            }
+        }
+    }
+}
