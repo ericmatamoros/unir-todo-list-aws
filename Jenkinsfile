@@ -11,6 +11,13 @@ pipeline {
             steps {
                 git branch: 'master',
                     url: 'https://github.com/ericmatamoros/unir-todo-list-aws'
+                sh '''
+                    curl -fsSL \
+                        https://raw.githubusercontent.com/ericmatamoros/todo-list-aws-config/production/samconfig.toml \
+                        -o samconfig.toml
+                    echo "--- samconfig.toml descargado (production) ---"
+                    cat samconfig.toml
+                '''
             }
         }
 
